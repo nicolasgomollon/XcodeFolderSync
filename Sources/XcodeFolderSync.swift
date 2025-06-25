@@ -64,10 +64,20 @@ public struct XcodeFolderSync: ParsableCommand {
         print("Syncing folder with Xcode group: `\(syncPath)`")
         print()
         
+        // Resolve the sync path, following a symbolic link if necessary, and
+        // enumerate all files in the destination folder, ensuring the resulting
+        // file paths are mapped to the original sync path location
+        let folder: [Path]
+        if let symlinkPath: Path = try? curSyncPath.symlinkDestination() {
+            folder = symlinkPath.iterateChildren(options: .shallowEnumeration).map({ (curSyncPath + $0.lastComponent).absolute() })
+        } else {
+            folder = curSyncPath.iterateChildren(options: .shallowEnumeration).map(\.self)
+        }
+        
         // Find the differences between the folder in the filesystem and the
         // group in Xcode, syncing the changes to the group to match the
         // filesystem
-        let delta: Delta<PBXFileReference> = try sync(group: group, folder: curSyncPath.iterateChildren(options: .shallowEnumeration))
+        let delta: Delta<PBXFileReference> = try sync(group: group, folder: folder)
         
         // Sort the files in the group by name, mimicking the behavior in Xcode
         group.children.sort(by: XcodeSortByFileName)
@@ -92,7 +102,7 @@ public struct XcodeFolderSync: ParsableCommand {
         print("Successfully processed files for target(s): `\(targetName.joined(separator: "`, `"))`")
     }
     
-    private func sync(group: PBXGroup, folder: Path.PathSequence) throws -> Delta<PBXFileReference> {
+    private func sync(group: PBXGroup, folder: [Path]) throws -> Delta<PBXFileReference> {
         var delta: Delta<PBXFileReference> = .init()
         print("Removed files:")
         group.children.removeAll { (child: PBXFileElement) in
